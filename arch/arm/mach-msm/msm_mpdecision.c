@@ -45,7 +45,20 @@
 #endif
 #include "acpuclock.h"
 
-#define DEBUG 0
+#define DEBUG 1
+
+#define MPDEC_TAG                       "[MPDEC]: "
+#define MSM_MPDEC_STARTDELAY            70000
+#define MSM_MPDEC_DELAY                 500
+#define MSM_MPDEC_PAUSE                 10000
+#define MSM_MPDEC_IDLE_FREQ             486000
+
+enum {
+	MSM_MPDEC_DISABLED = 0,
+	MSM_MPDEC_IDLE,
+	MSM_MPDEC_DOWN,
+	MSM_MPDEC_UP,
+};
 
 DEFINE_PER_CPU(struct msm_mpdec_cpudata_t, msm_mpdec_cpudata);
 EXPORT_PER_CPU_SYMBOL_GPL(msm_mpdec_cpudata);
@@ -213,6 +226,9 @@ static int mp_decision(void) {
 
 	rq_depth = get_rq_info();
 	nr_cpu_online = num_online_cpus();
+#if DEBUG
+        pr_info(MPDEC_TAG"[DEBUG]: RQ: %u, cpus_on: %i", rq_depth, nr_cpu_online);
+#endif
 
 	if (nr_cpu_online) {
 		index = (nr_cpu_online - 1) * 2;
