@@ -75,31 +75,16 @@ static struct msm_mpdec_tuners {
 	unsigned int pause;
 	bool scroff_single_core;
 	unsigned long int idle_freq;
-	unsigned int max_cpus;
-	unsigned int min_cpus;
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-	bool boost_enabled;
-	unsigned int boost_time;
-	unsigned long int boost_freq[4];
-#endif
+        unsigned int max_cpus;
+        unsigned int min_cpus;
 } msm_mpdec_tuners_ins = {
 	.startdelay = MSM_MPDEC_STARTDELAY,
 	.delay = MSM_MPDEC_DELAY,
 	.pause = MSM_MPDEC_PAUSE,
 	.scroff_single_core = true,
 	.idle_freq = MSM_MPDEC_IDLE_FREQ,
-	.max_cpus = CONFIG_NR_CPUS,
-	.min_cpus = 1,
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-	.boost_enabled = true,
-	.boost_time = MSM_MPDEC_BOOSTTIME,
-	.boost_freq = {
-		MSM_MPDEC_BOOSTFREQ_CPU0,
-		MSM_MPDEC_BOOSTFREQ_CPU1,
-		MSM_MPDEC_BOOSTFREQ_CPU2,
-		MSM_MPDEC_BOOSTFREQ_CPU3
-	},
-#endif
+        .max_cpus = CONFIG_NR_CPUS,
+        .min_cpus = 1,
 };
 
 static unsigned int NwNs_Threshold[8] = {19, 30, 19, 11, 19, 11, 0, 11};
@@ -191,13 +176,15 @@ static int mp_decision(void)
 	if (nr_cpu_online) {
 		index = (nr_cpu_online - 1) * 2;
 		if ((nr_cpu_online < CONFIG_NR_CPUS) && (rq_depth >= NwNs_Threshold[index])) {
-			if (total_time >= TwTs_Threshold[index]) {
+			if ((total_time >= TwTs_Threshold[index]) &&
+                            (nr_cpu_online < msm_mpdec_tuners_ins.max_cpus)) {
 				new_state = MSM_MPDEC_UP;
                                 if (get_slowest_cpu_rate() <=  msm_mpdec_tuners_ins.idle_freq)
                                         new_state = MSM_MPDEC_IDLE;
 			}
 		} else if ((nr_cpu_online > 1) && (rq_depth <= NwNs_Threshold[index+1])) {
-			if (total_time >= TwTs_Threshold[index+1] ) {
+			if ((total_time >= TwTs_Threshold[index+1]) &&
+                            (nr_cpu_online > msm_mpdec_tuners_ins.min_cpus)) {
 				new_state = MSM_MPDEC_DOWN;
                                 if (get_slowest_cpu_rate() > msm_mpdec_tuners_ins.idle_freq)
 			                new_state = MSM_MPDEC_IDLE;
@@ -360,84 +347,6 @@ show_one(pause, pause);
 show_one(scroff_single_core, scroff_single_core);
 show_one(min_cpus, min_cpus);
 show_one(max_cpus, max_cpus);
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-show_one(boost_enabled, boost_enabled);
-show_one(boost_time, boost_time);
-#endif
-
-#define show_one_twts(file_name, arraypos)				\
-static ssize_t show_##file_name						\
-(struct kobject *kobj, struct attribute *attr, char *buf)		\
-{									\
-	return sprintf(buf, "%u\n", TwTs_Threshold[arraypos]);		\
-}
-show_one_twts(twts_threshold_0, 0);
-show_one_twts(twts_threshold_1, 1);
-show_one_twts(twts_threshold_2, 2);
-show_one_twts(twts_threshold_3, 3);
-show_one_twts(twts_threshold_4, 4);
-show_one_twts(twts_threshold_5, 5);
-show_one_twts(twts_threshold_6, 6);
-show_one_twts(twts_threshold_7, 7);
-
-#define store_one_twts(file_name, arraypos)				\
-static ssize_t store_##file_name					\
-(struct kobject *a, struct attribute *b, const char *buf, size_t count)	\
-{									\
-	unsigned int input;						\
-	int ret;							\
-	ret = sscanf(buf, "%u", &input);				\
-	if (ret != 1)							\
-		return -EINVAL;						\
-	TwTs_Threshold[arraypos] = input;				\
-	return count;							\
-}									\
-define_one_global_rw(file_name);
-store_one_twts(twts_threshold_0, 0);
-store_one_twts(twts_threshold_1, 1);
-store_one_twts(twts_threshold_2, 2);
-store_one_twts(twts_threshold_3, 3);
-store_one_twts(twts_threshold_4, 4);
-store_one_twts(twts_threshold_5, 5);
-store_one_twts(twts_threshold_6, 6);
-store_one_twts(twts_threshold_7, 7);
-
-#define show_one_nwns(file_name, arraypos)				\
-static ssize_t show_##file_name						\
-(struct kobject *kobj, struct attribute *attr, char *buf)		\
-{									\
-	return sprintf(buf, "%u\n", NwNs_Threshold[arraypos]);		\
-}
-show_one_nwns(nwns_threshold_0, 0);
-show_one_nwns(nwns_threshold_1, 1);
-show_one_nwns(nwns_threshold_2, 2);
-show_one_nwns(nwns_threshold_3, 3);
-show_one_nwns(nwns_threshold_4, 4);
-show_one_nwns(nwns_threshold_5, 5);
-show_one_nwns(nwns_threshold_6, 6);
-show_one_nwns(nwns_threshold_7, 7);
-
-#define store_one_nwns(file_name, arraypos)				\
-static ssize_t store_##file_name					\
-(struct kobject *a, struct attribute *b, const char *buf, size_t count)	\
-{									\
-	unsigned int input;						\
-	int ret;							\
-	ret = sscanf(buf, "%u", &input);				\
-	if (ret != 1)							\
-		return -EINVAL;						\
-	NwNs_Threshold[arraypos] = input;				\
-	return count;							\
-}									\
-define_one_global_rw(file_name);
-store_one_nwns(nwns_threshold_0, 0);
-store_one_nwns(nwns_threshold_1, 1);
-store_one_nwns(nwns_threshold_2, 2);
-store_one_nwns(nwns_threshold_3, 3);
-store_one_nwns(nwns_threshold_4, 4);
-store_one_nwns(nwns_threshold_5, 5);
-store_one_nwns(nwns_threshold_6, 6);
-store_one_nwns(nwns_threshold_7, 7);
 
 #define show_one_twts(file_name, arraypos)                              \
 static ssize_t show_##file_name                                         \
@@ -624,49 +533,29 @@ static ssize_t store_scroff_single_core(struct kobject *a, struct attribute *b,
 }
 
 static ssize_t store_max_cpus(struct kobject *a, struct attribute *b,
-				const char *buf, size_t count)
+				   const char *buf, size_t count)
 {
 	unsigned int input;
-	int ret, cpu;
+	int ret;
 	ret = sscanf(buf, "%u", &input);
-	if ((ret != 1) || input > CONFIG_NR_CPUS || input < msm_mpdec_tuners_ins.min_cpus)
-				return -EINVAL;
+	if ((ret != 1) || input > 4)
+                return -EINVAL;
 
 	msm_mpdec_tuners_ins.max_cpus = input;
-	if (num_online_cpus() > input) {
-		for (cpu=CONFIG_NR_CPUS; cpu>0; cpu--) {
-			if (num_online_cpus() <= input)
-				break;
-			if (!cpu_online(cpu))
-				continue;
-			mpdec_cpu_down(cpu);
-		}
-		pr_info(MPDEC_TAG"max_cpus set to %u. Affected CPUs were unplugged!\n", input);
-	}
 
 	return count;
 }
 
 static ssize_t store_min_cpus(struct kobject *a, struct attribute *b,
-				const char *buf, size_t count)
+				   const char *buf, size_t count)
 {
 	unsigned int input;
-	int ret, cpu;
+	int ret;
 	ret = sscanf(buf, "%u", &input);
-	if ((ret != 1) || input < 1 || input > msm_mpdec_tuners_ins.max_cpus)
-		return -EINVAL;
+	if ((ret != 1) || input < 1)
+                return -EINVAL;
 
 	msm_mpdec_tuners_ins.min_cpus = input;
-	if (num_online_cpus() < input) {
-		for (cpu=1; cpu<CONFIG_NR_CPUS; cpu++) {
-			if (num_online_cpus() >= input)
-				break;
-			if (cpu_online(cpu))
-				continue;
-			mpdec_cpu_up(cpu);
-		}
-		pr_info(MPDEC_TAG"min_cpus set to %u. Affected CPUs were hotplugged!\n", input);
-	}
 
 	return count;
 }
@@ -739,8 +628,8 @@ static struct attribute *msm_mpdec_attributes[] = {
 	&pause.attr,
 	&scroff_single_core.attr,
 	&idle_freq.attr,
-	&min_cpus.attr,
-	&max_cpus.attr,
+        &min_cpus.attr,
+        &max_cpus.attr,
 	&enabled.attr,
 	&twts_threshold_0.attr,
 	&twts_threshold_1.attr,
