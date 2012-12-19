@@ -444,6 +444,80 @@ store_one_nwns(nwns_threshold_5, 5);
 store_one_nwns(nwns_threshold_6, 6);
 store_one_nwns(nwns_threshold_7, 7);
 
+#define show_one_twts(file_name, arraypos)                              \
+static ssize_t show_##file_name                                         \
+(struct kobject *kobj, struct attribute *attr, char *buf)               \
+{                                                                       \
+	return sprintf(buf, "%u\n", TwTs_Threshold[arraypos]);          \
+}
+show_one_twts(twts_threshold_0, 0);
+show_one_twts(twts_threshold_1, 1);
+show_one_twts(twts_threshold_2, 2);
+show_one_twts(twts_threshold_3, 3);
+show_one_twts(twts_threshold_4, 4);
+show_one_twts(twts_threshold_5, 5);
+show_one_twts(twts_threshold_6, 6);
+show_one_twts(twts_threshold_7, 7);
+
+#define store_one_twts(file_name, arraypos)                             \
+static ssize_t store_##file_name                                        \
+(struct kobject *a, struct attribute *b, const char *buf, size_t count) \
+{                                                                       \
+	unsigned int input;                                             \
+	int ret;                                                        \
+	ret = sscanf(buf, "%u", &input);                                \
+	if (ret != 1)                                                   \
+		return -EINVAL;                                         \
+	TwTs_Threshold[arraypos] = input;                               \
+	return count;                                                   \
+}                                                                       \
+define_one_global_rw(file_name);
+store_one_twts(twts_threshold_0, 0);
+store_one_twts(twts_threshold_1, 1);
+store_one_twts(twts_threshold_2, 2);
+store_one_twts(twts_threshold_3, 3);
+store_one_twts(twts_threshold_4, 4);
+store_one_twts(twts_threshold_5, 5);
+store_one_twts(twts_threshold_6, 6);
+store_one_twts(twts_threshold_7, 7);
+
+#define show_one_nwns(file_name, arraypos)                              \
+static ssize_t show_##file_name                                         \
+(struct kobject *kobj, struct attribute *attr, char *buf)               \
+{                                                                       \
+	return sprintf(buf, "%u\n", NwNs_Threshold[arraypos]);          \
+}
+show_one_nwns(nwns_threshold_0, 0);
+show_one_nwns(nwns_threshold_1, 1);
+show_one_nwns(nwns_threshold_2, 2);
+show_one_nwns(nwns_threshold_3, 3);
+show_one_nwns(nwns_threshold_4, 4);
+show_one_nwns(nwns_threshold_5, 5);
+show_one_nwns(nwns_threshold_6, 6);
+show_one_nwns(nwns_threshold_7, 7);
+
+#define store_one_nwns(file_name, arraypos)                             \
+static ssize_t store_##file_name                                        \
+(struct kobject *a, struct attribute *b, const char *buf, size_t count) \
+{                                                                       \
+	unsigned int input;                                             \
+	int ret;                                                        \
+	ret = sscanf(buf, "%u", &input);                                \
+	if (ret != 1)                                                   \
+		return -EINVAL;                                         \
+	NwNs_Threshold[arraypos] = input;                               \
+	return count;                                                   \
+}                                                                       \
+define_one_global_rw(file_name);
+store_one_nwns(nwns_threshold_0, 0);
+store_one_nwns(nwns_threshold_1, 1);
+store_one_nwns(nwns_threshold_2, 2);
+store_one_nwns(nwns_threshold_3, 3);
+store_one_nwns(nwns_threshold_4, 4);
+store_one_nwns(nwns_threshold_5, 5);
+store_one_nwns(nwns_threshold_6, 6);
+store_one_nwns(nwns_threshold_7, 7);
+
 static ssize_t show_idle_freq (struct kobject *kobj, struct attribute *attr,
 				char *buf)
 {
@@ -648,73 +722,6 @@ static ssize_t store_enabled(struct kobject *a, struct attribute *b,
 	return count;
 }
 
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-static ssize_t store_boost_enabled(struct kobject *a, struct attribute *b,
-				   const char *buf, size_t count)
-{
-	unsigned int input;
-	int ret;
-	ret = sscanf(buf, "%u", &input);
-	if (ret != 1)
-		return -EINVAL;
-
-	msm_mpdec_tuners_ins.boost_enabled = input;
-
-	return count;
-}
-
-static ssize_t store_boost_time(struct kobject *a, struct attribute *b,
-				const char *buf, size_t count)
-{
-	unsigned int input;
-	int ret;
-	ret = sscanf(buf, "%u", &input);
-	if (ret != 1)
-		return -EINVAL;
-
-	msm_mpdec_tuners_ins.boost_time = input;
-
-	return count;
-}
-
-static ssize_t show_boost_freqs(struct kobject *a, struct attribute *b,
-				char *buf)
-{
-	ssize_t len = 0;
-	int cpu = 0;
-
-	for_each_present_cpu(cpu) {
-		len += sprintf(buf + len, "%lu\n", per_cpu(msm_mpdec_cpudata, cpu).boost_freq);
-	}
-	return len;
-}
-static ssize_t store_boost_freqs(struct kobject *a, struct attribute *b,
-					const char *buf, size_t count)
-{
-	int i = 0;
-	unsigned int cpu = 0;
-	long unsigned int hz = 0;
-	const char *chz = NULL;
-
-	for (i=0; i<count; i++) {
-		if (buf[i] == ' ') {
-			sscanf(&buf[(i-1)], "%u", &cpu);
-			chz = &buf[(i+1)];
-		}
-	}
-	sscanf(chz, "%lu", &hz);
-
-	/* if this cpu is currently boosted, unboost */
-	unboost_cpu(cpu);
-
-	/* update boost freq */
-	per_cpu(msm_mpdec_cpudata, cpu).boost_freq = hz;
-
-	return count;
-}
-define_one_global_rw(boost_freqs);
-#endif
-
 define_one_global_rw(startdelay);
 define_one_global_rw(delay);
 define_one_global_rw(pause);
@@ -723,10 +730,6 @@ define_one_global_rw(idle_freq);
 define_one_global_rw(min_cpus);
 define_one_global_rw(max_cpus);
 define_one_global_rw(enabled);
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-define_one_global_rw(boost_enabled);
-define_one_global_rw(boost_time);
-#endif
 
 static struct attribute *msm_mpdec_attributes[] = {
 	&startdelay.attr,
@@ -753,11 +756,6 @@ static struct attribute *msm_mpdec_attributes[] = {
 	&nwns_threshold_5.attr,
 	&nwns_threshold_6.attr,
 	&nwns_threshold_7.attr,
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-	&boost_freqs.attr,
-	&boost_enabled.attr,
-	&boost_time.attr,
-#endif
 	NULL
 };
 
