@@ -227,9 +227,16 @@ static int mp_decision(void)
 
 static void msm_mpdec_work_thread(struct work_struct *work) {
 	unsigned int cpu = nr_cpu_ids;
+	cputime64_t on_time = 0;
+        bool suspended = false;
 
-	/* Check if we are paused */
-	if (mpdec_paused_until >= ktime_to_ms(ktime_get()))
+        for_each_possible_cpu(cpu) {
+                if ((per_cpu(msm_mpdec_cpudata, cpu).device_suspended == true)) {
+                        suspended = true;
+                        break;
+                }
+        }
+	if (suspended == true)
 		goto out;
 
 	if (mpdec_suspended == true)
@@ -258,10 +265,11 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 		cpu = get_slowest_cpu();
 		if (cpu < nr_cpu_ids) {
 			if ((per_cpu(msm_mpdec_cpudata, cpu).online == true) && (cpu_online(cpu))) {
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-				unboost_cpu(cpu);
-#endif
-				mpdec_cpu_down(cpu);
+				cpu_down(cpu);
+				per_cpu(msm_mpdec_cpudata, cpu).online = false;
+				on_time = ktime_to_ms(ktime_get()) - per_cpu(msm_mpdec_cpudata, cpu).on_time;
+				pr_info(MPDEC_TAG"CPU[%d] on->off | Mask=[%d%d%d%d] | time online: %llu\n",
+						cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3), on_time);
 			} else if (per_cpu(msm_mpdec_cpudata, cpu).online != cpu_online(cpu)) {
 				pr_info(MPDEC_TAG"CPU[%d] was controlled outside of mpdecision! | pausing [%d]ms\n",
 					cpu, msm_mpdec_tuners_ins.pause);
@@ -271,13 +279,14 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 		}
 		break;
 	case MSM_MPDEC_UP:
-		cpu = cpumask_next_zero(0, cpu_online_mask);
+		cpu = cpumask_next_zero(0, cpu_online_mask);;
 		if (cpu < nr_cpu_ids) {
 			if ((per_cpu(msm_mpdec_cpudata, cpu).online == false) && (!cpu_online(cpu))) {
-				mpdec_cpu_up(cpu);
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-				unboost_cpu(cpu);
-#endif
+				cpu_up(cpu);
+				per_cpu(msm_mpdec_cpudata, cpu).online = true;
+				per_cpu(msm_mpdec_cpudata, cpu).on_time = ktime_to_ms(ktime_get());
+				pr_info(MPDEC_TAG"CPU[%d] off->on | Mask=[%d%d%d%d]\n",
+						cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
 			} else if (per_cpu(msm_mpdec_cpudata, cpu).online != cpu_online(cpu)) {
 				pr_info(MPDEC_TAG"CPU[%d] was controlled outside of mpdecision! | pausing [%d]ms\n",
 					cpu, msm_mpdec_tuners_ins.pause);
