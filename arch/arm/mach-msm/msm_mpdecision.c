@@ -38,11 +38,6 @@
 #include <asm-generic/cputime.h>
 #include <linux/hrtimer.h>
 #include <linux/delay.h>
-#include <linux/export.h>
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-#include <linux/input.h>
-#include <linux/slab.h>
-#endif
 #include "acpuclock.h"
 
 #define DEBUG 1
@@ -102,6 +97,11 @@ static int update_cpu_min_freq(struct cpufreq_policy *cpu_policy,
 static void unboost_cpu(int cpu);
 #endif
 static cputime64_t mpdec_paused_until = 0;
+
+static unsigned long get_rate(int cpu)
+{
+        return acpuclk_get_rate(cpu);
+}
 
 static int get_slowest_cpu(void)
 {
