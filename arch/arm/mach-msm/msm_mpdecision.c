@@ -67,18 +67,7 @@ static bool mpdec_suspended = false;
 static struct notifier_block msm_mpdec_lcd_notif;
 static struct delayed_work msm_mpdec_work;
 static struct workqueue_struct *msm_mpdec_workq;
-<<<<<<< HEAD
 static DEFINE_MUTEX(mpdec_msm_cpu_lock);
-static DEFINE_MUTEX(mpdec_msm_susres_lock);
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-static struct workqueue_struct *mpdec_input_wq;
-static DEFINE_PER_CPU(struct work_struct, mpdec_input_work);
-static struct workqueue_struct *msm_mpdec_revib_workq;
-static DEFINE_PER_CPU(struct delayed_work, msm_mpdec_revib_work);
-#endif
-=======
-static DEFINE_MUTEX(msm_cpu_lock);
->>>>>>> 34653ac... msm_mpdecision: use own workqueues
 
 static struct msm_mpdec_tuners {
 	unsigned int startdelay;
@@ -250,9 +239,6 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 	if (suspended == true)
 		goto out;
 
-	if (mpdec_suspended == true)
-		goto out;
-
 	if (!mutex_trylock(&mpdec_msm_cpu_lock))
 		goto out;
 
@@ -314,13 +300,8 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 
 out:
 	if (state != MSM_MPDEC_DISABLED)
-<<<<<<< HEAD
-		queue_delayed_work(msm_mpdec_workq, &msm_mpdec_work,
-					msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
-=======
 		queue_delayed_work(msm_mpdec_suspended_workq, &msm_mpdec_work,
 				msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
->>>>>>> 34653ac... msm_mpdecision: use own workqueues
 	return;
 }
 
