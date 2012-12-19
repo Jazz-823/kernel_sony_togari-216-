@@ -109,7 +109,7 @@ static struct msm_mpdec_tuners {
 #endif
 };
 
-static unsigned int NwNs_Threshold[8] = {12, 0, 20, 7, 25, 10, 0, 18};
+static unsigned int NwNs_Threshold[8] = {19, 30, 19, 11, 19, 11, 0, 11};
 static unsigned int TwTs_Threshold[8] = {140, 0, 140, 190, 140, 190, 0, 190};
 
 extern unsigned int get_rq_info(void);
@@ -125,83 +125,45 @@ static void unboost_cpu(int cpu);
 #endif
 static cputime64_t mpdec_paused_until = 0;
 
-static unsigned long get_rate(int cpu) {
-	return acpuclk_get_rate(cpu);
+static int get_slowest_cpu(void)
+{
+        int i, cpu = 0;
+        unsigned long rate, slow_rate = 0;
+
+        for (i = 0; i < CONFIG_NR_CPUS; i++) {
+                rate = get_rate(i);
+                if ((rate < slow_rate) && (slow_rate != 0)) {
+                        cpu = i;
+                        slow_rate = rate;
+                }
+                if (slow_rate == 0) {
+                        slow_rate = rate;
+                }
+        }
+
+        return cpu;
 }
 
-static int get_slowest_cpu(void) {
-	int i, cpu = 0;
-	unsigned long rate, slow_rate = 0;
+static int get_slowest_cpu_rate(void)
+{
+        int i = 0;
+        unsigned long rate, slow_rate = 0;
 
-	for (i = 1; i < CONFIG_NR_CPUS; i++) {
-		if (!cpu_online(i))
-			continue;
-		rate = get_rate(i);
-		if (slow_rate == 0) {
-			cpu = i;
-			slow_rate = rate;
-			continue;
-		}
-		if ((rate <= slow_rate) && (slow_rate != 0)) {
-			cpu = i;
-			slow_rate = rate;
-		}
-	}
+        for (i = 0; i < CONFIG_NR_CPUS; i++) {
+                rate = get_rate(i);
+                if ((rate < slow_rate) && (slow_rate != 0)) {
+                        slow_rate = rate;
+                }
+                if (slow_rate == 0) {
+                        slow_rate = rate;
+                }
+        }
 
-	return cpu;
+        return slow_rate;
 }
 
-static unsigned long get_slowest_cpu_rate(void) {
-	int i = 0;
-	unsigned long rate, slow_rate = 0;
-
-	for (i = 0; i < CONFIG_NR_CPUS; i++) {
-		if (!cpu_online(i))
-			continue;
-		rate = get_rate(i);
-		if ((rate < slow_rate) && (slow_rate != 0)) {
-			slow_rate = rate;
-			continue;
-		}
-		if (slow_rate == 0) {
-			slow_rate = rate;
-		}
-	}
-
-	return slow_rate;
-}
-
-static void mpdec_cpu_up(int cpu) {
-	if (!cpu_online(cpu)) {
-		mutex_lock(&per_cpu(msm_mpdec_cpudata, cpu).hotplug_mutex);
-		cpu_up(cpu);
-		per_cpu(msm_mpdec_cpudata, cpu).on_time = ktime_to_ms(ktime_get());
-		per_cpu(msm_mpdec_cpudata, cpu).online = true;
-		per_cpu(msm_mpdec_cpudata, cpu).times_cpu_hotplugged += 1;
-		pr_info(MPDEC_TAG"CPU[%d] off->on | Mask=[%d%d%d%d]\n",
-			cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
-		mutex_unlock(&per_cpu(msm_mpdec_cpudata, cpu).hotplug_mutex);
-	}
-}
-EXPORT_SYMBOL_GPL(mpdec_cpu_up);
-
-static void mpdec_cpu_down(int cpu) {
-	cputime64_t on_time = 0;
-	if (cpu_online(cpu)) {
-		mutex_lock(&per_cpu(msm_mpdec_cpudata, cpu).hotplug_mutex);
-		cpu_down(cpu);
-		on_time = (ktime_to_ms(ktime_get()) - per_cpu(msm_mpdec_cpudata, cpu).on_time);
-		per_cpu(msm_mpdec_cpudata, cpu).online = false;
-		per_cpu(msm_mpdec_cpudata, cpu).on_time_total += on_time;
-		per_cpu(msm_mpdec_cpudata, cpu).times_cpu_unplugged += 1;
-		pr_info(MPDEC_TAG"CPU[%d] on->off | Mask=[%d%d%d%d] | time online: %llu\n",
-			cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3), on_time);
-		mutex_unlock(&per_cpu(msm_mpdec_cpudata, cpu).hotplug_mutex);
-	}
-}
-EXPORT_SYMBOL_GPL(mpdec_cpu_down);
-
-static int mp_decision(void) {
+static int mp_decision(void)
+{
 	static bool first_call = true;
 	int new_state = MSM_MPDEC_IDLE;
 	int nr_cpu_online;
@@ -233,18 +195,16 @@ static int mp_decision(void) {
 	if (nr_cpu_online) {
 		index = (nr_cpu_online - 1) * 2;
 		if ((nr_cpu_online < CONFIG_NR_CPUS) && (rq_depth >= NwNs_Threshold[index])) {
-			if ((total_time >= TwTs_Threshold[index]) &&
-				(nr_cpu_online < msm_mpdec_tuners_ins.max_cpus)) {
+			if (total_time >= TwTs_Threshold[index]) {
 				new_state = MSM_MPDEC_UP;
-				if (get_slowest_cpu_rate() <=  msm_mpdec_tuners_ins.idle_freq)
-					new_state = MSM_MPDEC_IDLE;
+                                if (get_slowest_cpu_rate() <=  msm_mpdec_tuners_ins.idle_freq)
+                                        new_state = MSM_MPDEC_IDLE;
 			}
 		} else if ((nr_cpu_online > 1) && (rq_depth <= NwNs_Threshold[index+1])) {
-			if ((total_time >= TwTs_Threshold[index+1]) &&
-				(nr_cpu_online > msm_mpdec_tuners_ins.min_cpus)) {
+			if (total_time >= TwTs_Threshold[index+1] ) {
 				new_state = MSM_MPDEC_DOWN;
-				if (get_slowest_cpu_rate() > msm_mpdec_tuners_ins.idle_freq)
-					new_state = MSM_MPDEC_IDLE;
+                                if (get_slowest_cpu_rate() > msm_mpdec_tuners_ins.idle_freq)
+			                new_state = MSM_MPDEC_IDLE;
 			}
 		} else {
 			new_state = MSM_MPDEC_IDLE;
@@ -260,8 +220,7 @@ static int mp_decision(void) {
 
 	last_time = ktime_to_ms(ktime_get());
 #if DEBUG
-	pr_info(MPDEC_TAG"[DEBUG] rq: %u, new_state: %i | Mask=[%d%d%d%d]\n",
-			rq_depth, new_state, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
+        pr_info(MPDEC_TAG"[DEBUG] New State: %i", new_state);
 #endif
 	return new_state;
 }
