@@ -1163,15 +1163,8 @@ static int __init msm_mpdec_init(void) {
 #endif
 	}
 
-	was_paused = true;
+        was_paused = true;
 
-	msm_mpdec_workq = alloc_workqueue(
-						"mpdec",
-						WQ_UNBOUND | WQ_RESCUER | WQ_FREEZABLE,
-						1
-						);
-	if (!msm_mpdec_workq)
-		return -ENOMEM;
 	INIT_DELAYED_WORK(&msm_mpdec_work, msm_mpdec_work_thread);
 
 #ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
