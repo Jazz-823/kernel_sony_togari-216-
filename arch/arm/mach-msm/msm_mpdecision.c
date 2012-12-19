@@ -67,6 +67,7 @@ static bool mpdec_suspended = false;
 static struct notifier_block msm_mpdec_lcd_notif;
 static struct delayed_work msm_mpdec_work;
 static struct workqueue_struct *msm_mpdec_workq;
+<<<<<<< HEAD
 static DEFINE_MUTEX(mpdec_msm_cpu_lock);
 static DEFINE_MUTEX(mpdec_msm_susres_lock);
 #ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
@@ -75,6 +76,9 @@ static DEFINE_PER_CPU(struct work_struct, mpdec_input_work);
 static struct workqueue_struct *msm_mpdec_revib_workq;
 static DEFINE_PER_CPU(struct delayed_work, msm_mpdec_revib_work);
 #endif
+=======
+static DEFINE_MUTEX(msm_cpu_lock);
+>>>>>>> 34653ac... msm_mpdecision: use own workqueues
 
 static struct msm_mpdec_tuners {
 	unsigned int startdelay;
@@ -310,8 +314,13 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 
 out:
 	if (state != MSM_MPDEC_DISABLED)
+<<<<<<< HEAD
 		queue_delayed_work(msm_mpdec_workq, &msm_mpdec_work,
 					msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
+=======
+		queue_delayed_work(msm_mpdec_suspended_workq, &msm_mpdec_work,
+				msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
+>>>>>>> 34653ac... msm_mpdecision: use own workqueues
 	return;
 }
 
@@ -716,8 +725,8 @@ static ssize_t store_enabled(struct kobject *a, struct attribute *b,
 	case '1':
 		state = MSM_MPDEC_IDLE;
 		was_paused = true;
-		queue_delayed_work(msm_mpdec_workq, &msm_mpdec_work,
-					msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
+		queue_delayed_work(msm_mpdec_suspended_workq, &msm_mpdec_work,
+                                   msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
 		pr_info(MPDEC_TAG"firing up mpdecision...\n");
 		break;
 	default:
@@ -769,10 +778,7 @@ static struct attribute_group msm_mpdec_attr_group = {
 	.name = "conf",
 };
 
-/********* STATS START *********/
-
-static ssize_t show_time_cpus_on(struct kobject *a, struct attribute *b,
-					char *buf)
+static int __init msm_mpdec_init(void)
 {
 	ssize_t len = 0;
 	int cpu = 0;
@@ -872,7 +878,14 @@ static int __init msm_mpdec_init(void) {
 
         was_paused = true;
 
+        msm_mpdec_workq = alloc_workqueue(
+                "mpdec", WQ_UNBOUND | WQ_RESCUER | WQ_FREEZABLE, 1);
+        if (!msm_mpdec_workq)
+                return -ENOMEM;
 	INIT_DELAYED_WORK(&msm_mpdec_work, msm_mpdec_work_thread);
+	if (state != MSM_MPDEC_DISABLED)
+		queue_delayed_work(msm_mpdec_suspended_workq, &msm_mpdec_work,
+                                   msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
 
 #ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
 	mpdec_input_wq = create_workqueue("mpdeciwq");
@@ -913,28 +926,12 @@ static int __init msm_mpdec_init(void) {
 
 	pr_info(MPDEC_TAG"%s init complete.", __func__);
 
-
-#ifndef CONFIG_HAS_EARLYSUSPEND
-	msm_mpdec_lcd_notif.notifier_call = msm_mpdec_lcd_notifier_callback;
-	if (lcd_register_client(&msm_mpdec_lcd_notif) != 0) {
-		pr_err("%s: Failed to register lcd callback\n", __func__);
-		err = -EINVAL;
-		lcd_unregister_client(&msm_mpdec_lcd_notif);
-	}
-#else
-	register_early_suspend(&msm_mpdec_early_suspend_handler);
-#endif
-
 	return err;
 }
 late_initcall(msm_mpdec_init);
 
-void msm_mpdec_exit(void) {
-	lcd_unregister_client(&msm_mpdec_lcd_notif);
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-	input_unregister_handler(&mpdec_input_handler);
-	destroy_workqueue(msm_mpdec_revib_workq);
-	destroy_workqueue(mpdec_input_wq);
-#endif
-	destroy_workqueue(msm_mpdec_workq);
+void msm_mpdec_exit(void)
+{
+        destroy_workqueue(msm_mpdec_workq);
+        destroy_workqueue(msm_mpdec_suspended_workq);
 }
