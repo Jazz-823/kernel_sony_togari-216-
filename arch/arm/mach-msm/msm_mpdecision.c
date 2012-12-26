@@ -254,9 +254,10 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 						cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3), on_time);
 			} else if (per_cpu(msm_mpdec_cpudata, cpu).online != cpu_online(cpu)) {
 				pr_info(MPDEC_TAG"CPU[%d] was controlled outside of mpdecision! | pausing [%d]ms\n",
-					cpu, msm_mpdec_tuners_ins.pause);
-				mpdec_paused_until = ktime_to_ms(ktime_get()) + msm_mpdec_tuners_ins.pause;
+						cpu, msm_mpdec_tuners_ins.pause);
+                                cancel_delayed_work_sync(&msm_mpdec_work);
 				was_paused = true;
+                                goto out2;
 			}
 		}
 		break;
@@ -271,9 +272,10 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 						cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
 			} else if (per_cpu(msm_mpdec_cpudata, cpu).online != cpu_online(cpu)) {
 				pr_info(MPDEC_TAG"CPU[%d] was controlled outside of mpdecision! | pausing [%d]ms\n",
-					cpu, msm_mpdec_tuners_ins.pause);
-				mpdec_paused_until = ktime_to_ms(ktime_get()) + msm_mpdec_tuners_ins.pause;
+						cpu, msm_mpdec_tuners_ins.pause);
+                                cancel_delayed_work_sync(&msm_mpdec_work);
 				was_paused = true;
+                                goto out2;
 			}
 		}
 		break;
@@ -287,6 +289,11 @@ out:
 	if (state != MSM_MPDEC_DISABLED)
 		queue_delayed_work(msm_mpdec_workq, &msm_mpdec_work,
 				msecs_to_jiffies(msm_mpdec_tuners_ins.delay));
+	return;
+out2:
+	if (state != MSM_MPDEC_DISABLED)
+		queue_delayed_work(msm_mpdec_workq, &msm_mpdec_work,
+				msecs_to_jiffies(msm_mpdec_tuners_ins.pause));
 	return;
 }
 
