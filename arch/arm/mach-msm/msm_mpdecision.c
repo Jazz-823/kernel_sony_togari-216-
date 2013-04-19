@@ -54,8 +54,16 @@ enum {
 	MSM_MPDEC_UP,
 };
 
-DEFINE_PER_CPU(struct msm_mpdec_cpudata_t, msm_mpdec_cpudata);
-EXPORT_PER_CPU_SYMBOL_GPL(msm_mpdec_cpudata);
+struct msm_mpdec_cpudata_t {
+	struct mutex suspend_mutex;
+	int online;
+	int device_suspended;
+	cputime64_t on_time;
+	cputime64_t on_time_total;
+	long long unsigned int times_cpu_hotplugged;
+	long long unsigned int times_cpu_unplugged;
+};
+static DEFINE_PER_CPU(struct msm_mpdec_cpudata_t, msm_mpdec_cpudata);
 
 static struct notifier_block msm_mpdec_fb_notif;
 static struct delayed_work msm_mpdec_work;
@@ -250,6 +258,8 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 				cpu_down(cpu);
 				per_cpu(msm_mpdec_cpudata, cpu).online = false;
 				on_time = ktime_to_ms(ktime_get()) - per_cpu(msm_mpdec_cpudata, cpu).on_time;
+				per_cpu(msm_mpdec_cpudata, cpu).on_time_total += on_time;
+				per_cpu(msm_mpdec_cpudata, cpu).times_cpu_unplugged += 1;
 				pr_info(MPDEC_TAG"CPU[%d] on->off | Mask=[%d%d%d%d] | time online: %llu\n",
 						cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3), on_time);
 			} else if (per_cpu(msm_mpdec_cpudata, cpu).online != cpu_online(cpu)) {
@@ -267,6 +277,7 @@ static void msm_mpdec_work_thread(struct work_struct *work) {
 				cpu_up(cpu);
 				per_cpu(msm_mpdec_cpudata, cpu).online = true;
 				per_cpu(msm_mpdec_cpudata, cpu).on_time = ktime_to_ms(ktime_get());
+				per_cpu(msm_mpdec_cpudata, cpu).times_cpu_hotplugged += 1;
 				pr_info(MPDEC_TAG"CPU[%d] off->on | Mask=[%d%d%d%d]\n",
 						cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
 			} else if (per_cpu(msm_mpdec_cpudata, cpu).online != cpu_online(cpu)) {
@@ -293,6 +304,7 @@ out:
 static void msm_mpdec_suspend(void)
 {
 	int cpu = nr_cpu_ids;
+	cputime64_t on_time = 0;
 	for_each_possible_cpu(cpu) {
 		mutex_lock(&per_cpu(msm_mpdec_cpudata, cpu).suspend_mutex);
 		if ((cpu >= 1) && (cpu_online(cpu))) {
@@ -300,6 +312,9 @@ static void msm_mpdec_suspend(void)
                         pr_info(MPDEC_TAG"Screen -> off. Suspended CPU[%d] | Mask=[%d%d%d%d]\n",
                                 cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
 			per_cpu(msm_mpdec_cpudata, cpu).online = false;
+			on_time = ktime_to_ms(ktime_get()) - per_cpu(msm_mpdec_cpudata, cpu).on_time;
+			per_cpu(msm_mpdec_cpudata, cpu).on_time_total += on_time;
+			per_cpu(msm_mpdec_cpudata, cpu).times_cpu_unplugged += 1;
 		}
 	}
         /* main work thread can sleep now */
@@ -321,6 +336,7 @@ static void msm_mpdec_resume(void)
 		cpu_up(1);
 		per_cpu(msm_mpdec_cpudata, 1).on_time = ktime_to_ms(ktime_get());
 		per_cpu(msm_mpdec_cpudata, 1).online = true;
+		per_cpu(msm_mpdec_cpudata, 1).times_cpu_hotplugged += 1;
 		pr_info(MPDEC_TAG"Screen -> on. Hot plugged CPU1 | Mask=[%d%d%d%d]\n",
                         cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
 	}
@@ -641,6 +657,7 @@ static ssize_t store_enabled(struct kobject *a, struct attribute *b,
                         if (!cpu_online(cpu)) {
                                 per_cpu(msm_mpdec_cpudata, cpu).on_time = ktime_to_ms(ktime_get());
                                 per_cpu(msm_mpdec_cpudata, cpu).online = true;
+                                per_cpu(msm_mpdec_cpudata, cpu).times_cpu_hotplugged += 1;
                                 cpu_up(cpu);
                                 pr_info(MPDEC_TAG"nap time... Hot plugged CPU[%d] | Mask=[%d%d%d%d]\n",
                                         cpu, cpu_online(0), cpu_online(1), cpu_online(2), cpu_online(3));
@@ -702,6 +719,64 @@ static struct attribute_group msm_mpdec_attr_group = {
 	.attrs = msm_mpdec_attributes,
 	.name = "conf",
 };
+
+/********* STATS START *********/
+
+static ssize_t show_time_cpus_on(struct kobject *a, struct attribute *b,
+				   char *buf)
+{
+	ssize_t len = 0;
+	int cpu = 0;
+
+	for_each_possible_cpu(cpu) {
+		len += sprintf(buf + len, "%i %llu\n", cpu, per_cpu(msm_mpdec_cpudata, cpu).on_time_total);
+	}
+
+	return len;
+}
+define_one_global_ro(time_cpus_on);
+
+static ssize_t show_times_cpus_hotplugged(struct kobject *a, struct attribute *b,
+				   char *buf)
+{
+	ssize_t len = 0;
+	int cpu = 0;
+
+	for_each_possible_cpu(cpu) {
+		len += sprintf(buf + len, "%i %llu\n", cpu, per_cpu(msm_mpdec_cpudata, cpu).times_cpu_hotplugged);
+	}
+
+	return len;
+}
+define_one_global_ro(times_cpus_hotplugged);
+
+static ssize_t show_times_cpus_unplugged(struct kobject *a, struct attribute *b,
+				   char *buf)
+{
+	ssize_t len = 0;
+	int cpu = 0;
+
+	for_each_possible_cpu(cpu) {
+		len += sprintf(buf + len, "%i %llu\n", cpu, per_cpu(msm_mpdec_cpudata, cpu).times_cpu_unplugged);
+	}
+
+	return len;
+}
+define_one_global_ro(times_cpus_unplugged);
+
+static struct attribute *msm_mpdec_stats_attributes[] = {
+	&time_cpus_on.attr,
+	&times_cpus_hotplugged.attr,
+	&times_cpus_unplugged.attr,
+	NULL
+};
+
+
+static struct attribute_group msm_mpdec_stats_attr_group = {
+	.attrs = msm_mpdec_stats_attributes,
+	.name = "stats",
+};
+/**************************** SYSFS END ****************************/
 
 static int __init msm_mpdec_init(void)
 {
@@ -780,25 +855,6 @@ static int __init msm_mpdec_init(void) {
 		per_cpu(msm_mpdec_cpudata, cpu).on_time_total = 0;
 		per_cpu(msm_mpdec_cpudata, cpu).times_cpu_unplugged = 0;
 		per_cpu(msm_mpdec_cpudata, cpu).times_cpu_hotplugged = 0;
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-		per_cpu(msm_mpdec_cpudata, cpu).norm_min_freq = CONFIG_MSM_CPU_FREQ_MIN;
-		switch (cpu) {
-			case 0:
-			case 1:
-			case 2:
-				boost_freq = msm_mpdec_tuners_ins.boost_freq[cpu];
-				break;
-			default:
-				boost_freq = msm_mpdec_tuners_ins.boost_freq[3];
-				break;
-		}
-		per_cpu(msm_mpdec_cpudata, cpu).boost_freq = boost_freq;
-		per_cpu(msm_mpdec_cpudata, cpu).is_boosted = false;
-		per_cpu(msm_mpdec_cpudata, cpu).revib_wq_running = false;
-		per_cpu(msm_mpdec_cpudata, cpu).boost_until = 0;
-		mutex_init(&(per_cpu(msm_mpdec_cpudata, cpu).boost_mutex));
-		mutex_init(&(per_cpu(msm_mpdec_cpudata, cpu).unboost_mutex));
-#endif
 	}
 
         was_paused = true;
@@ -831,7 +887,7 @@ static int __init msm_mpdec_init(void) {
 			pr_warn(MPDEC_TAG"sysfs: ERROR, could not create sysfs group");
 		}
 		rc = sysfs_create_group(msm_mpdec_kobject,
-					&msm_mpdec_stats_attr_group);
+							&msm_mpdec_stats_attr_group);
 		if (rc) {
 			pr_warn(MPDEC_TAG"sysfs: ERROR, could not create sysfs stats group");
 		}
