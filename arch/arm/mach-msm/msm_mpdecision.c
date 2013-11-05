@@ -47,44 +47,8 @@
 
 #define DEBUG 0
 
-#define MPDEC_TAG                       "[MPDEC]: "
-#define MSM_MPDEC_STARTDELAY            20000
-#define MSM_MPDEC_DELAY                 130
-#define MSM_MPDEC_PAUSE                 10000
-#define MSM_MPDEC_IDLE_FREQ             486000
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-#define MSM_MPDEC_BOOSTTIME             1000
-#define MSM_MPDEC_BOOSTFREQ_CPU0        960000
-#define MSM_MPDEC_BOOSTFREQ_CPU1        960000
-#define MSM_MPDEC_BOOSTFREQ_CPU2        729600
-#define MSM_MPDEC_BOOSTFREQ_CPU3        576000
-#endif
-
-enum {
-    MSM_MPDEC_DISABLED = 0,
-    MSM_MPDEC_IDLE,
-    MSM_MPDEC_DOWN,
-    MSM_MPDEC_UP,
-};
-
-struct msm_mpdec_cpudata_t {
-    struct mutex hotplug_mutex;
-    int online;
-    cputime64_t on_time;
-    cputime64_t on_time_total;
-    long long unsigned int times_cpu_hotplugged;
-    long long unsigned int times_cpu_unplugged;
-#ifdef CONFIG_MSM_MPDEC_INPUTBOOST_CPUMIN
-    struct mutex boost_mutex;
-    struct mutex unboost_mutex;
-    unsigned long int norm_min_freq;
-    unsigned long int boost_freq;
-    cputime64_t boost_until;
-    bool is_boosted;
-    bool revib_wq_running;
-#endif
-};
-static DEFINE_PER_CPU(struct msm_mpdec_cpudata_t, msm_mpdec_cpudata);
+DEFINE_PER_CPU(struct msm_mpdec_cpudata_t, msm_mpdec_cpudata);
+EXPORT_PER_CPU_SYMBOL_GPL(msm_mpdec_cpudata);
 
 static bool mpdec_suspended = false;
 static struct notifier_block msm_mpdec_lcd_notif;
@@ -496,14 +460,9 @@ static void mpdec_input_event(struct input_handle *handle, unsigned int type,
 		return;
 #endif
 
-#ifdef CONFIG_BRICKED_THERMAL
-    if (bricked_thermal_throttled > 0)
-        return;
-#endif
-
-    for_each_online_cpu(i) {
-        queue_work_on(i, mpdec_input_wq, &per_cpu(mpdec_input_work, i));
-    }
+	for_each_online_cpu(i) {
+		queue_work_on(i, mpdec_input_wq, &per_cpu(mpdec_input_work, i));
+	}
 }
 
 static int input_dev_filter(const char *input_dev_name) {
@@ -871,51 +830,49 @@ static ssize_t store_scroff_single_core(struct kobject *a, struct attribute *b,
 static ssize_t store_max_cpus(struct kobject *a, struct attribute *b,
 				const char *buf, size_t count)
 {
-    unsigned int input;
-    int ret, cpu;
-    ret = sscanf(buf, "%u", &input);
-    if ((ret != 1) || input > CONFIG_NR_CPUS)
-                return -EINVAL;
+	unsigned int input;
+	int ret, cpu;
+	ret = sscanf(buf, "%u", &input);
+	if ((ret != 1) || input > CONFIG_NR_CPUS || input < msm_mpdec_tuners_ins.min_cpus)
+				return -EINVAL;
 
-    msm_mpdec_tuners_ins.max_cpus = input;
-    if (num_online_cpus() > input) {
-        for (cpu=CONFIG_NR_CPUS; cpu>0; cpu--) {
-            if (num_online_cpus() <= input)
-                break;
-            if (!cpu_online(cpu))
-                continue;
-            cpu_down(cpu);
-            pr_info(MPDEC_TAG"Unplugging CPU[%i]...\n", cpu);
-        }
-        pr_info(MPDEC_TAG"max_cpus set to %u. Affected CPUs were unplugged!\n", input);
-    }
+	msm_mpdec_tuners_ins.max_cpus = input;
+	if (num_online_cpus() > input) {
+		for (cpu=CONFIG_NR_CPUS; cpu>0; cpu--) {
+			if (num_online_cpus() <= input)
+				break;
+			if (!cpu_online(cpu))
+				continue;
+			mpdec_cpu_down(cpu);
+		}
+		pr_info(MPDEC_TAG"max_cpus set to %u. Affected CPUs were unplugged!\n", input);
+	}
 
-    return count;
+	return count;
 }
 
 static ssize_t store_min_cpus(struct kobject *a, struct attribute *b,
 				const char *buf, size_t count)
 {
-    unsigned int input;
-    int ret, cpu;
-    ret = sscanf(buf, "%u", &input);
-    if ((ret != 1) || input < 1)
-        return -EINVAL;
+	unsigned int input;
+	int ret, cpu;
+	ret = sscanf(buf, "%u", &input);
+	if ((ret != 1) || input < 1 || input > msm_mpdec_tuners_ins.max_cpus)
+		return -EINVAL;
 
-    msm_mpdec_tuners_ins.min_cpus = input;
-    if (num_online_cpus() < input) {
-        for (cpu=1; cpu<CONFIG_NR_CPUS; cpu++) {
-            if (num_online_cpus() >= input)
-                break;
-            if (cpu_online(cpu))
-                continue;
-            cpu_up(cpu);
-            pr_info(MPDEC_TAG"Hotplugging CPU[%i]...\n", cpu);
-        }
-        pr_info(MPDEC_TAG"min_cpus set to %u. Affected CPUs were hotplugged!\n", input);
-    }
+	msm_mpdec_tuners_ins.min_cpus = input;
+	if (num_online_cpus() < input) {
+		for (cpu=1; cpu<CONFIG_NR_CPUS; cpu++) {
+			if (num_online_cpus() >= input)
+				break;
+			if (cpu_online(cpu))
+				continue;
+			mpdec_cpu_up(cpu);
+		}
+		pr_info(MPDEC_TAG"min_cpus set to %u. Affected CPUs were hotplugged!\n", input);
+	}
 
-    return count;
+	return count;
 }
 
 static ssize_t store_enabled(struct kobject *a, struct attribute *b,
