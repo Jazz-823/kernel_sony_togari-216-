@@ -23,9 +23,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#ifdef CONFIG_FB
+#include "msm_mpdecision.h"
+#ifndef CONFIG_HAS_EARLYSUSPEND
 #include <linux/lcd_notify.h>
-#elif defined CONFIG_HAS_EARLYSUSPEND
+#else
 #include <linux/earlysuspend.h>
 #endif
 #include <linux/init.h>
@@ -607,7 +608,7 @@ static void msm_mpdec_resume(struct work_struct * msm_mpdec_suspend_work) {
 }
 static DECLARE_WORK(msm_mpdec_resume_work, msm_mpdec_resume);
 
-#ifdef CONFIG_FB
+#ifndef CONFIG_HAS_EARLYSUSPEND
 static int msm_mpdec_lcd_notifier_callback(struct notifier_block *this,
 				unsigned long event, void *data) {
 	pr_debug("%s: event = %lu\n", __func__, event);
@@ -633,7 +634,7 @@ static int msm_mpdec_lcd_notifier_callback(struct notifier_block *this,
 
 	return 0;
 }
-#elif defined CONFIG_HAS_EARLYSUSPEND
+#else
 static void msm_mpdec_early_suspend(struct early_suspend *h) {
        msm_mpdec_suspend();
 }
@@ -1205,14 +1206,14 @@ static int __init msm_mpdec_init(void) {
     pr_info(MPDEC_TAG"%s init complete.", __func__);
 
 
-#ifdef CONFIG_FB
+#ifndef CONFIG_HAS_EARLYSUSPEND
 	msm_mpdec_lcd_notif.notifier_call = msm_mpdec_lcd_notifier_callback;
 	if (lcd_register_client(&msm_mpdec_lcd_notif) != 0) {
 		pr_err("%s: Failed to register lcd callback\n", __func__);
 		err = -EINVAL;
 		lcd_unregister_client(&msm_mpdec_lcd_notif);
 	}
-#elif defined CONFIG_HAS_EARLYSUSPEND
+#else
 	register_early_suspend(&msm_mpdec_early_suspend_handler);
 #endif
 
